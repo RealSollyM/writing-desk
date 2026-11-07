@@ -1,11 +1,16 @@
+// Load environment variables from .env file
+import 'dotenv/config'
 import { defineConfig } from '@prisma/config'
 
 export default defineConfig({
   schema: './prisma/schema.prisma',
   datasource: {
-    url: process.env.DATABASE_URL,
+    // Use DIRECT_URL for migrations (direct connection, not pooled)
+    // Falls back to DATABASE_URL if DIRECT_URL is not set
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
   },
   migrations: {
-    dbUrl: process.env.DATABASE_URL,
+    // Use direct URL for migrations to avoid pooling issues
+    dbUrl: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
   },
 })
