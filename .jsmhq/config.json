@@ -1,0 +1,143 @@
+{
+  "project": {
+    "id": "writingdesk",
+    "name": "Writing Desk",
+    "repo": "writingdesk",
+    "hqPort": 7420,
+    "officeName": "Mogen",
+    "exportPlan": true,
+    "path": ""
+  },
+  "team": [
+    {
+      "id": "solly-m",
+      "name": "Solly M",
+      "role": "Lead",
+      "isLead": true,
+      "cli": "claude",
+      "model": "",
+      "mode": "local",
+      "color": "#00e436",
+      "skills": [],
+      "roleMd": "You are Solly M, the lead. You plan and assign work. You never write app code.",
+      "sandbox": {
+        "resources": {
+          "cpus": 1,
+          "memoryGb": 1
+        },
+        "allow": [
+          "nextjs.org",
+          "better-auth.com",
+          "neon.com",
+          "console.neon.tech",
+          "*.neon.tech",
+          "vercel.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    },
+    {
+      "id": "theo",
+      "name": "Theo",
+      "role": "Developer",
+      "isLead": false,
+      "cli": "claude",
+      "model": "",
+      "mode": "local",
+      "color": "#29adff",
+      "skills": [],
+      "roleMd": "You are Theo, a developer on the team. You build the tasks assigned to you.",
+      "sandbox": {
+        "resources": {
+          "cpus": 1,
+          "memoryGb": 2
+        },
+        "allow": [
+          "nextjs.org",
+          "better-auth.com",
+          "neon.com",
+          "console.neon.tech",
+          "*.neon.tech",
+          "vercel.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    },
+    {
+      "id": "prosper",
+      "name": "Prosper",
+      "role": "Developer",
+      "isLead": false,
+      "cli": "claude",
+      "model": "",
+      "mode": "local",
+      "color": "#ffd23a",
+      "skills": [],
+      "roleMd": "You are Prosper, a developer on the team. You build the tasks assigned to you.",
+      "sandbox": {
+        "resources": {
+          "cpus": 1,
+          "memoryGb": 2
+        },
+        "allow": [
+          "nextjs.org",
+          "better-auth.com",
+          "neon.com",
+          "console.neon.tech",
+          "*.neon.tech",
+          "vercel.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    }
+  ],
+  "workflow": {
+    "review": {
+      "enabled": true,
+      "tool": "coderabbit",
+      "command": ""
+    },
+    "merge": {
+      "by": "human"
+    },
+    "deploy": {
+      "enabled": false,
+      "tool": "instacloud",
+      "command": "",
+      "perAgentEnvironments": false
+    }
+  },
+  "stack": {
+    "frameworks": [
+      {
+        "id": "nextjs"
+      }
+    ],
+    "tools": {
+      "auth": {
+        "id": "better-auth"
+      },
+      "database": {
+        "id": "neon"
+      },
+      "analytics": {
+        "id": "vercel-analytics"
+      },
+      "security": {
+        "id": "arcjet"
+      }
+    }
+  }
+}
