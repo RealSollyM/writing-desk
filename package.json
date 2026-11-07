@@ -13,14 +13,24 @@
 		"cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts"
 	},
 	"dependencies": {
+		"@better-auth/prisma-adapter": "^1.7.18",
 		"@opennextjs/cloudflare": "^1.19.9",
+<<<<<<< HEAD
 		"@prisma/adapter-neon": "7.10.1",
 		"@prisma/client": "7.10.1",
 		"arcjet": "1.15.0",
 		"dotenv": "^16.4.5",
+=======
+		"@prisma/adapter-pg": "^7.10.1",
+		"@prisma/client": "^7.10.1",
+		"better-auth": "^1.7.18",
+>>>>>>> fb1a869 (Implement Better Auth for email/password authentication)
 		"next": "16.2.6",
+		"pg": "^8.23.1",
+		"prisma": "^7.10.1",
 		"react": "^19.1.7",
-		"react-dom": "^19.1.7"
+		"react-dom": "^19.1.7",
+		"zod": "^4.6.7"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3",
