@@ -6,26 +6,49 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN
+  WRITER
+  READER
+}
+
+enum BookRole {
+  OWNER
+  CO_WRITER
+  CONTRIBUTOR
+  GHOST_WRITER
+}
+
+enum DocumentStatus {
+  DRAFT
+  PUBLISHED
+}
+
 model User {
-  id        String     @id @default(cuid())
-  email     String     @unique
-  name      String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  documents Document[]
+  id              String             @id @default(cuid())
+  email           String             @unique
+  name            String?
+  role            UserRole           @default(WRITER)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  documents       Document[]
+  books           Book[]             @relation("UserBooks")
+  bookCollaborations BookCollaborator[]
 
   @@map("users")
 }
 
 model Document {
-  id        String         @id @default(cuid())
-  title     String
-  content   String
-  status    DocumentStatus @default(DRAFT)
-  authorId  String
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  title      String
+  content    String
+  status     DocumentStatus @default(DRAFT)
+  authorId   String
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  book       Book?          @relation(fields: [bookId], references: [id])
+  bookId     String?
 
   @@index([authorId])
   @@index([status])
@@ -33,7 +56,29 @@ model Document {
   @@map("documents")
 }
 
-enum DocumentStatus {
-  DRAFT
-  PUBLISHED
+model Book {
+  id           String             @id @default(cuid())
+  title        String
+  description  String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  documents    Document[]
+  collaborators BookCollaborator[]
+  owners       User[]             @relation("UserBooks")
+
+  @@map("books")
+}
+
+model BookCollaborator {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  role      BookRole
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("book_collaborators")
 }
