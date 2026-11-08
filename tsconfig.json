@@ -1,7 +1,11 @@
 {
 	"compilerOptions": {
 		"target": "es2024",
-		"lib": ["dom", "dom.iterable", "esnext"],
+		"lib": [
+			"dom",
+			"dom.iterable",
+			"esnext"
+		],
 		"allowJs": true,
 		"skipLibCheck": true,
 		"strict": true,
@@ -19,13 +23,30 @@
 			}
 		],
 		"paths": {
-			"@/*": ["./src/*"]
+			"@/*": [
+				"./src/*"
+			]
 		},
 		"types": [
 			"./cloudflare-env.d.ts",
 			"node"
 		]
 	},
+<<<<<<< HEAD
 	"include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
 	"exclude": ["node_modules", "prisma.config.ts"]
 }
+=======
+	"include": [
+		"next-env.d.ts",
+		"**/*.ts",
+		"**/*.tsx",
+		".next/types/**/*.ts",
+		".next/dev/types/**/*.ts"
+	],
+	"exclude": [
+		"node_modules",
+		"prisma.config.ts"
+	]
+}
+>>>>>>> aed75eb97bc32ab4b571262ce21c8e7257ad4812

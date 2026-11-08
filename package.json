@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
 	"name": "writingdesk",
 	"version": "0.1.0",
 	"private": true,
@@ -39,3 +40,41 @@
 		"wrangler": "^4.94.0"
 	}
 }
+=======
+  "name": "writingdesk",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "deploy": "vercel --prod",
+    "preview": "vercel"
+  },
+  "dependencies": {
+    "@better-auth/prisma-adapter": "^1.7.18",
+    "@prisma/adapter-neon": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "better-auth": "^1.7.18",
+    "dotenv": "^16.4.5",
+    "next": "16.2.6",
+    "react": "^19.1.7",
+    "react-dom": "^19.1.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19.1.7",
+    "@types/react-dom": "^19.1.7",
+    "@vercel/config": "^0.14.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "prisma": "7.10.1",
+    "tailwindcss": "^4",
+    "typescript": "^5.7.4"
+  }
+}
+>>>>>>> aed75eb97bc32ab4b571262ce21c8e7257ad4812
