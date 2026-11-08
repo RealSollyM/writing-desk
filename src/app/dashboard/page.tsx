@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession, signIn, signOut } from "@/lib/auth-client";
+import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import Editor from "@/components/Editor";
@@ -221,12 +221,9 @@ export default function DashboardPage() {
             <div className="flex items-center space-x-4">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Writing Desk</h1>
               <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => router.push("/account")}
-                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-                >
-                  Account
-                </button>
+                <span className="text-sm text-gray-600 dark:text-gray-400" title="Signed in as">
+                  {session?.user?.email || 'Account'}
+                </span>
                 <button
                   onClick={handleSignOut}
                   className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
