@@ -1,105 +1,67 @@
 import { NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
-// Get key from environment
-const key = process.env.ARCJET_KEY
+export async function GET(request: Request) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
 
-// Initialize arcjet lazily
-let aj: unknown = null
-
-async function getArcjet() {
-  if (aj) return aj
-
-  if (!key) {
-    return null
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    const { default: arcjet, fixedWindow, detectBot } = await import('arcjet')
-
-    const rateLimitRule = fixedWindow({
-      window: '5 minutes',
-      max: 100,
+    const documents = await prisma.document.findMany({
+      where: {
+        authorId: session.user.id,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      include: {
+        book: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     })
 
-    const botRule = detectBot({
-      allow: [
-        'CATEGORY:SEARCH_ENGINE',
-        'BING_CRAWLER',
-        'GOOGLE_CRAWLER',
-      ],
-    })
-
-    aj = arcjet({
-      key,
-      rules: [rateLimitRule, botRule],
-      log: console,
-    })
-
-    return aj
+    return NextResponse.json(documents)
   } catch (error) {
-    console.error('Failed to initialize Arcjet:', error)
-    return null
+    console.error('Error fetching documents:', error)
+    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
   }
-}
-
-// Get client IP
-function getIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) {
-    return forwarded.split(',')[0].trim()
-  }
-  return '127.0.0.1'
-}
-
-export async function GET(request: Request) {
-  // Your API logic here
-  return NextResponse.json({
-    message: 'Documents endpoint',
-    protected: !!key,
-  })
 }
 
 export async function POST(request: Request) {
-  // Protect with Arcjet if key is set
-  const arcjetInstance = await getArcjet()
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
 
-  if (arcjetInstance) {
-    const ip = getIP(request)
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await (arcjetInstance as any).protect(
-        {},
-        {
-          url: request.url,
-          method: 'POST',
-          ip,
-          headers: Object.fromEntries(request.headers.entries()),
-        }
-      )
-
-      if (result.isDenied()) {
-        if (result.reason?.type === 'RATE_LIMIT') {
-          return NextResponse.json(
-            { error: 'Too many requests. Please try again later.' },
-            {
-              status: 429,
-              headers: {
-                'Content-Type': 'application/json',
-                ...result.rateLimit?.headers,
-              },
-            }
-          )
-        }
-      }
-    } catch (error) {
-      console.error('Arcjet error:', error)
-    }
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Your API logic here
-  return NextResponse.json({
-    message: 'Document created',
-    success: true,
-  })
+  try {
+    const body = await request.json() as { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null }
+    const { title, content, status, bookId } = body
+
+    const document = await prisma.document.create({
+      data: {
+        title: title || 'Untitled',
+        content: content || '',
+        status: status || 'DRAFT',
+        authorId: session.user.id,
+        bookId: bookId || null,
+      },
+    })
+
+    return NextResponse.json(document)
+  } catch (error) {
+    console.error('Error creating document:', error)
+    return NextResponse.json({ error: 'Failed to create document' }, { status: 500 })
+  }
 }
