@@ -167,7 +167,7 @@ export default function Editor({ initialContent = '', onUpdate, readOnly = false
           '</>',
           activeFormatting.code,
           readOnly,
-          'Toggle inline code',
+          'Toggle inline code formatting',
           'Inline code',
           'font-mono text-sm'
         )}
