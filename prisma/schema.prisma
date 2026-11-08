@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  WRITER
+  READER
+}
+
+enum BookRole {
+  OWNER
+  CO_WRITER
+  CONTRIBUTOR
+  GHOST_WRITER
+}
+
+enum DocumentStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model User {
+  id              String             @id @default(cuid())
+  email           String             @unique
+  name            String?
+  role            UserRole           @default(WRITER)
+  emailVerified   Boolean            @default(false)
+  image           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Better Auth related fields
+  accounts       Account[]
+  sessions       Session[]
+
+  // Writing Desk models
+  documents      Document[]
+  books          Book[]             @relation("UserBooks")
+  bookCollaborations BookCollaborator[]
+
+  @@map("users")
+}
+
+model Document {
+  id         String         @id @default(cuid())
+  title      String
+  content    String
+  status     DocumentStatus @default(DRAFT)
+  authorId   String
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  book       Book?          @relation(fields: [bookId], references: [id])
+  bookId     String?
+
+  @@index([authorId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+model Book {
+  id           String             @id @default(cuid())
+  title        String
+  description  String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  documents    Document[]
+  collaborators BookCollaborator[]
+  owners       User[]             @relation("UserBooks")
+
+  @@map("books")
+}
+
+model BookCollaborator {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  role      BookRole
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("book_collaborators")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String?  @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  password              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}

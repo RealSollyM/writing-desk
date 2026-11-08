@@ -49,6 +49,24 @@ async function initializeArcjet() {
 export async function middleware(request: Request) {
   // Skip if Arcjet key is not configured
   if (!key) {
+    // Still check auth for protected routes
+    const url = new URL(request.url)
+    const protectedPaths = ["/dashboard", "/api/protected"]
+    const isProtected = protectedPaths.some((path) =>
+      url.pathname.startsWith(path)
+    )
+
+    if (isProtected) {
+      const { auth } = await import('@/lib/auth')
+      const session = await auth.api.getSession({
+        headers: request.headers,
+      })
+
+      if (!session) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
+    }
+
     return NextResponse.next()
   }
 
@@ -60,6 +78,23 @@ export async function middleware(request: Request) {
       const arcjetInstance = await initializeArcjet()
 
       if (!arcjetInstance) {
+        // Still check auth for protected routes
+        const protectedPaths = ["/dashboard", "/api/protected"]
+        const isProtected = protectedPaths.some((path) =>
+          url.pathname.startsWith(path)
+        )
+
+        if (isProtected) {
+          const { auth } = await import('@/lib/auth')
+          const session = await auth.api.getSession({
+            headers: request.headers,
+          })
+
+          if (!session) {
+            return NextResponse.redirect(new URL('/login', request.url))
+          }
+        }
+
         return NextResponse.next()
       }
 
@@ -68,8 +103,7 @@ export async function middleware(request: Request) {
         '127.0.0.1'
 
       // Protect the request
-      const ajAny = arcjetInstance as any
-      const result = await ajAny.protect(
+      const result = await (arcjetInstance as any).protect(
         {},
         {
           url: request.url,
@@ -106,6 +140,22 @@ export async function middleware(request: Request) {
       console.error('Arcjet error:', error)
       // Fail open - continue without protection on error
     }
+  }
+
+  // Auth middleware - protect dashboard and /api/protected routes
+  const { auth } = await import('@/lib/auth')
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
+
+  const protectedPaths = ['/dashboard', '/api/protected']
+
+  const isProtected = protectedPaths.some((path) =>
+    url.pathname.startsWith(path)
+  )
+
+  if (isProtected && !session) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   return NextResponse.next()
