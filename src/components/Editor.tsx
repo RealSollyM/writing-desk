@@ -112,8 +112,8 @@ export default function Editor({ initialContent = '', onUpdate, readOnly = false
         </button>
         <button
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={editor.isActive('blockquote') ? 'bg-gray-200 dark:bg-gray-700 italic border-l-4 border-gray-400 dark:border-gray-500 pl-2' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}
-          style={editor.isActive('blockquote') ? { fontStyle: 'italic', borderLeft: '4px solid #9ca3af', paddingLeft: '8px' } : {}}
+          className={editor.isActive('blockquote') ? 'bg-gray-200 dark:bg-gray-700 italic border-l-2 border-indigo-500 dark:border-indigo-400 pl-1.5' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}
+          style={editor.isActive('blockquote') ? { fontStyle: 'italic', borderLeft: '2px solid #6366f1', paddingLeft: '6px' } : {}}
         >
           Quote
         </button>
