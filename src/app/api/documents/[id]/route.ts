@@ -15,7 +15,10 @@ async function getUserRole(userId: string): Promise<string | null> {
   return user?.role ?? null
 }
 
-/** Validates document request body */
+/**
+ * Validates document request body for PUT operations (full document replacement).
+ * Returns sanitized object or null if invalid.
+ */
 function validateRequestBody(body: unknown): { title: string; content: string; status: "DRAFT" | "PUBLISHED"; bookId: string | null } | null {
   if (body === null || typeof body !== 'object') {
     return null
@@ -26,12 +29,17 @@ function validateRequestBody(body: unknown): { title: string; content: string; s
   if (title !== undefined) result.title = String(title)
   if (content !== undefined) result.content = String(content)
   if (status === 'DRAFT' || status === 'PUBLISHED') result.status = status
-  if (bookId === null || (bookId !== undefined && bookId === null)) result.bookId = null
+  // Handle bookId: null means detach from book, undefined means no change
+  if (bookId === null) result.bookId = null
   else if (bookId !== undefined) result.bookId = String(bookId)
 
   return result as { title: string; content: string; status: "DRAFT" | "PUBLISHED"; bookId: string | null }
 }
 
+/**
+ * Retrieves a single document by ID.
+ * Returns the document if found and the user is author or admin, otherwise 403.
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -73,6 +81,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
+/**
+ * Updates a document by ID.
+ * Only updates fields supplied in the request to avoid overwriting concurrent edits.
+ * bookId can be explicitly set to null to detach from a book.
+ */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -109,7 +122,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Validate bookId access if provided
+    // Validate bookId access if provided (only when not null)
     if (bookId !== undefined && bookId !== null) {
       // Check if book exists
       const book = await prisma.book.findUnique({
@@ -142,6 +155,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
+/**
+ * Deletes a document by ID.
+ * Only accessible to the document's author or an admin.
+ */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({
     headers: request.headers,

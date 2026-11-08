@@ -18,6 +18,7 @@ async function getUserRole(userId: string): Promise<string | null> {
 /**
  * Validates the document request body for POST/PUT operations.
  * Returns a sanitized object with only the allowed fields, or null if invalid.
+ * bookId handling: null means detach from book, string means assign to book, undefined means no change.
  */
 function validateDocumentBody(body: unknown): { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null } | null {
   if (body === null || typeof body !== 'object') {
@@ -29,9 +30,10 @@ function validateDocumentBody(body: unknown): { title?: string; content?: string
   if (title !== undefined) result.title = String(title)
   if (content !== undefined) result.content = String(content)
   if (status === 'DRAFT' || status === 'PUBLISHED') result.status = status
-  if (bookId === null || bookId === undefined) {
-    result.bookId = bookId === null ? null : undefined
-  } else {
+  // Handle bookId: null means detach from book, undefined means no change, string means assign/bookId
+  if (bookId === null) {
+    result.bookId = null
+  } else if (bookId !== undefined) {
     result.bookId = String(bookId)
   }
 
