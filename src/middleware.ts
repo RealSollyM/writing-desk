@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 // Get key from environment
 const key = process.env.ARCJET_KEY
 
-// Only initialize arcjet if key is set
+// Initialize Arcjet client once - following best practices
 let aj: unknown = null
 
 async function initializeArcjet() {
@@ -35,6 +35,7 @@ async function initializeArcjet() {
     })
 
     // Create arcjet instance with key and rules
+    // Note: The client is provided by Arcjet SDK when using Next.js middleware
     aj = arcjet({
       key,
       rules: [rateLimitRule, botRule],
@@ -49,15 +50,104 @@ async function initializeArcjet() {
 }
 
 export async function middleware(request: Request) {
-  // Skip if Arcjet key is not configured
-  if (!key) {
-    // Still check auth for protected routes
-    const url = new URL(request.url)
-    const protectedPaths = ["/dashboard", "/api/protected"]
-    const isProtected = protectedPaths.some((path) =>
-      url.pathname.startsWith(path)
+  // Get the Arcjet client
+  const arcjetInstance = await initializeArcjet()
+
+  // Protected paths that require both Arcjet protection and authentication
+  const protectedPaths = ['/dashboard', '/api/protected']
+  const url = new URL(request.url)
+  const isProtected = protectedPaths.some((path) =>
+    url.pathname.startsWith(path)
+  )
+
+  // Skip Arcjet for non-API routes unless they're protected paths
+  const isApiRoute = url.pathname.startsWith('/api/')
+
+  // If Arcjet is configured, enforce protection on API routes
+  if (isApiRoute && arcjetInstance) {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1'
+
+    // Protect the request
+    const result = await (arcjetInstance as any).protect(
+      {},
+      {
+        url: request.url,
+        method: request.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS',
+        ip,
+        headers: Object.fromEntries(request.headers.entries()),
+      }
     )
 
+    if (result.isDenied()) {
+      if (result.reason?.type === 'RATE_LIMIT') {
+        return new NextResponse(JSON.stringify({
+          error: 'Too many requests',
+          rateLimit: result.rateLimit,
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            ...result.rateLimit?.headers,
+          },
+        })
+      }
+
+      if (result.reason?.type === 'BOT') {
+        return new NextResponse(JSON.stringify({
+          error: 'Bot detected',
+          message: 'Automated requests are not allowed.',
+        }), {
+          status: 403,
+        })
+      }
+    }
+  }
+
+  // Also check Arcjet for protected non-API routes
+  if (!isApiRoute && isProtected && arcjetInstance) {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1'
+
+    const result = await (arcjetInstance as any).protect(
+      {},
+      {
+        url: request.url,
+        method: request.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS',
+        ip,
+        headers: Object.fromEntries(request.headers.entries()),
+      }
+    )
+
+    if (result.isDenied()) {
+      if (result.reason?.type === 'RATE_LIMIT') {
+        return new NextResponse(JSON.stringify({
+          error: 'Too many requests',
+          rateLimit: result.rateLimit,
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            ...result.rateLimit?.headers,
+          },
+        })
+      }
+
+      if (result.reason?.type === 'BOT') {
+        return new NextResponse(JSON.stringify({
+          error: 'Bot detected',
+          message: 'Automated requests are not allowed.',
+        }), {
+          status: 403,
+        })
+      }
+    }
+  }
+
+  // Fall back to auth check if Arcjet key is not configured
+  if (!key || !arcjetInstance) {
     if (isProtected) {
       const { auth } = await import('@/lib/auth')
       const session = await auth.api.getSession({
@@ -72,98 +162,22 @@ export async function middleware(request: Request) {
     return NextResponse.next()
   }
 
-  const url = new URL(request.url)
-  const isApiRoute = url.pathname.startsWith('/api/')
+  // Auth middleware - protect dashboard and /api/protected routes with session check
+  if (isProtected) {
+    const { auth } = await import('@/lib/auth')
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    })
 
-  if (isApiRoute) {
-    try {
-      const arcjetInstance = await initializeArcjet()
-
-      if (!arcjetInstance) {
-        // Still check auth for protected routes
-        const protectedPaths = ["/dashboard", "/api/protected"]
-        const isProtected = protectedPaths.some((path) =>
-          url.pathname.startsWith(path)
-        )
-
-        if (isProtected) {
-          const { auth } = await import('@/lib/auth')
-          const session = await auth.api.getSession({
-            headers: request.headers,
-          })
-
-          if (!session) {
-            return NextResponse.redirect(new URL('/login', request.url))
-          }
-        }
-
-        return NextResponse.next()
-      }
-
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-        request.headers.get('x-real-ip') ||
-        '127.0.0.1'
-
-      // Protect the request
-      const result = await (arcjetInstance as any).protect(
-        {},
-        {
-          url: request.url,
-          method: request.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS',
-          ip,
-          headers: Object.fromEntries(request.headers.entries()),
-        }
-      )
-
-      if (result.isDenied()) {
-        if (result.reason?.type === 'RATE_LIMIT') {
-          return new NextResponse(JSON.stringify({
-            error: 'Too many requests',
-            rateLimit: result.rateLimit,
-          }), {
-            status: 429,
-            headers: {
-              'Content-Type': 'application/json',
-              ...result.rateLimit?.headers,
-            },
-          })
-        }
-
-        if (result.reason?.type === 'BOT') {
-          return new NextResponse(JSON.stringify({
-            error: 'Bot detected',
-            message: 'Automated requests are not allowed.',
-          }), {
-            status: 403,
-          })
-        }
-      }
-    } catch (error) {
-      console.error('Arcjet error:', error)
-      // Fail open - continue without protection on error
+    if (!session) {
+      return NextResponse.redirect(new URL('/login', request.url))
     }
-  }
-
-  // Auth middleware - protect dashboard and /api/protected routes
-  const { auth } = await import('@/lib/auth')
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  })
-
-  const protectedPaths = ['/dashboard', '/api/protected']
-
-  const isProtected = protectedPaths.some((path) =>
-    url.pathname.startsWith(path)
-  )
-
-  if (isProtected && !session) {
-    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   return NextResponse.next()
 }
 
-// Configure the middleware to run on API routes
+// Configure the middleware to run on all routes except static files
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).+)'],
 }
