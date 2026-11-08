@@ -62,6 +62,10 @@ export default function DashboardPage() {
     }
   };
 
+  /**
+   * Creates a new blank document and sets it as the current document.
+   * Resets edit state and unsaved changes tracking.
+   */
   const handleCreateNew = () => {
     const newDoc: Document = {
       id: `new-${Date.now()}`,
@@ -116,6 +120,10 @@ export default function DashboardPage() {
     }
   };
 
+  /**
+   * Deletes a document by ID after user confirmation.
+   * Updates the documents list and clears current document if deleted.
+   */
   const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this document?")) {
       try {
@@ -137,6 +145,9 @@ export default function DashboardPage() {
     }
   };
 
+  /**
+   * Publishes the current document by changing its status to PUBLISHED.
+   */
   const handlePublish = async () => {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "PUBLISHED" as const };
@@ -144,6 +155,9 @@ export default function DashboardPage() {
     await handleSave(updated);
   };
 
+  /**
+   * Saves the current document as a draft by changing its status to DRAFT.
+   */
   const handleDraft = async () => {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "DRAFT" as const };
@@ -151,6 +165,10 @@ export default function DashboardPage() {
     await handleSave(updated);
   };
 
+  /**
+   * Updates document content when editor content changes.
+   * Tracks unsaved changes for the document.
+   */
   const handleContentUpdate = useCallback((content: string) => {
     setCurrentDoc(prev => {
       if (!prev) return null;
