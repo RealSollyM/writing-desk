@@ -2,6 +2,36 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+/**
+ * Gets the user's role from the database for authorization checks.
+ * This loads the role directly from the database rather than relying on
+ * session.user.role which may be undefined for non-admin users.
+ */
+async function getUserRole(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  })
+  return user?.role ?? null
+}
+
+/** Validates document request body */
+function validateRequestBody(body: unknown): { title: string; content: string; status: "DRAFT" | "PUBLISHED"; bookId: string | null } | null {
+  if (body === null || typeof body !== 'object') {
+    return null
+  }
+  const { title, content, status, bookId } = body as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+
+  if (title !== undefined) result.title = String(title)
+  if (content !== undefined) result.content = String(content)
+  if (status === 'DRAFT' || status === 'PUBLISHED') result.status = status
+  if (bookId === null || (bookId !== undefined && bookId === null)) result.bookId = null
+  else if (bookId !== undefined) result.bookId = String(bookId)
+
+  return result as { title: string; content: string; status: "DRAFT" | "PUBLISHED"; bookId: string | null }
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -13,6 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const { id } = await params
+    const userRole = await getUserRole(session.user.id)
     const document = await prisma.document.findUnique({
       where: {
         id,
@@ -31,7 +62,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    if (document.authorId !== session.user.id && (session.user as any).role !== 'ADMIN') {
+    if (document.authorId !== session.user.id && userRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -52,10 +83,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const { id } = await params
-    const body = await request.json() as { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null }
+    // Validate request body
+    let body: { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null } | null = null
+    try {
+      body = validateRequestBody(await request.json())
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
     const { title, content, status, bookId } = body
 
+    const { id } = await params
     const document = await prisma.document.findUnique({
       where: { id },
     })
@@ -64,18 +104,35 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    if (document.authorId !== session.user.id && (session.user as any).role !== 'ADMIN') {
+    const userRole = await getUserRole(session.user.id)
+    if (document.authorId !== session.user.id && userRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Validate bookId access if provided
+    if (bookId !== undefined && bookId !== null) {
+      // Check if book exists
+      const book = await prisma.book.findUnique({
+        where: { id: bookId },
+        select: { id: true },
+      })
+      if (!book) {
+        return NextResponse.json({ error: 'Book not found' }, { status: 404 })
+      }
+    }
+
+    // Build update data with only the fields supplied in the request
+    // This prevents overwriting concurrent edits to omitted fields
+    const updateData: { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null } = {}
+    if (title !== undefined) updateData.title = title
+    if (content !== undefined) updateData.content = content
+    if (status !== undefined) updateData.status = status
+    // Only set bookId if explicitly provided (including explicit null to detach)
+    if (bookId !== undefined) updateData.bookId = bookId
+
     const updated = await prisma.document.update({
       where: { id },
-      data: {
-        title: title ?? document.title,
-        content: content ?? document.content,
-        status: status ?? document.status,
-        bookId: bookId ?? document.bookId,
-      },
+      data: updateData,
     })
 
     return NextResponse.json(updated)
@@ -104,7 +161,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    if (document.authorId !== session.user.id && (session.user as any).role !== 'ADMIN') {
+    const userRole = await getUserRole(session.user.id)
+    if (document.authorId !== session.user.id && userRole !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

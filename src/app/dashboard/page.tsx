@@ -1,8 +1,8 @@
 "use client";
 
-import { useSession, signIn } from "@/lib/auth-client";
+import { useSession, signIn, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Editor from "@/components/Editor";
 
 interface Document {
@@ -21,7 +21,10 @@ export default function DashboardPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentDoc, setCurrentDoc] = useState<Document | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const editorContentRef = useRef<string>("");
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -35,14 +38,24 @@ export default function DashboardPage() {
     }
   }, [session]);
 
+  /**
+   * Fetches documents from the API and handles loading/error states.
+   * On success, clears error and populates documents.
+   * On failure, sets error state with retry option.
+   */
   const fetchDocuments = async () => {
     try {
       const response = await fetch("/api/documents");
       if (response.ok) {
         const data = await response.json();
         setDocuments(data as Document[]);
+        setError(null);
+      } else {
+        const errData = await response.json() as { error?: string };
+        setError(errData.error || 'Failed to fetch documents');
       }
     } catch (error) {
+      setError('Network error while fetching documents');
       console.error("Error fetching documents:", error);
     } finally {
       setIsLoading(false);
@@ -60,10 +73,17 @@ export default function DashboardPage() {
     };
     setCurrentDoc(newDoc);
     setEditingId(null);
+    setHasUnsavedChanges(false);
+    editorContentRef.current = "";
   };
 
-  const handleSave = async () => {
-    if (!currentDoc) return;
+  /**
+   * Saves the current document to the API.
+   * Accepts the document to save, serializes it, and passes it to the API.
+   * Reconciles response against currently active document to preserve unsaved edits.
+   */
+  const handleSave = async (docToSave: Document) => {
+    if (!docToSave) return;
 
     try {
       const method = editingId ? "PUT" : "POST";
@@ -71,17 +91,25 @@ export default function DashboardPage() {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: currentDoc.title,
-          content: currentDoc.content,
-          status: currentDoc.status,
+          title: docToSave.title,
+          content: docToSave.content,
+          status: docToSave.status,
         }),
       });
 
       if (response.ok) {
         const updated = await response.json() as Document;
+        // Reconcile response against currently active document and edit version
         setDocuments(documents.map(d => d.id === updated.id ? updated : d));
-        setCurrentDoc(updated);
+        // Only select the saved document if it's still the active one and has no newer edits
+        if (currentDoc?.id === updated.id && !hasUnsavedChanges) {
+          setCurrentDoc(updated);
+        }
         setEditingId(updated.id);
+        setHasUnsavedChanges(false);
+        editorContentRef.current = updated.content;
+      } else {
+        console.error("Error saving document:", response.statusText);
       }
     } catch (error) {
       console.error("Error saving document:", error);
@@ -98,7 +126,10 @@ export default function DashboardPage() {
           setDocuments(documents.filter(d => d.id !== id));
           if (currentDoc?.id === id) {
             setCurrentDoc(null);
+            setEditingId(null);
           }
+        } else {
+          console.error("Error deleting document:", response.statusText);
         }
       } catch (error) {
         console.error("Error deleting document:", error);
@@ -110,14 +141,44 @@ export default function DashboardPage() {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "PUBLISHED" as const };
     setCurrentDoc(updated);
-    await handleSave();
+    await handleSave(updated);
   };
 
-  const handleDraft = () => {
+  const handleDraft = async () => {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "DRAFT" as const };
     setCurrentDoc(updated);
-    handleSave();
+    await handleSave(updated);
+  };
+
+  const handleContentUpdate = useCallback((content: string) => {
+    setCurrentDoc(prev => {
+      if (!prev) return null;
+      setHasUnsavedChanges(true);
+      return { ...prev, content };
+    });
+    editorContentRef.current = content;
+  }, []);
+
+  // Handle window unload to warn about unsaved changes
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!currentDoc || !hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [currentDoc, hasUnsavedChanges]);
+
+  // Handle sign out properly - call signOut and navigate only after success
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      router.push("/login");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   if (isPending) {
@@ -132,6 +193,25 @@ export default function DashboardPage() {
     return null;
   }
 
+  // Check for errors
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-red-100 dark:bg-red-900 border border-red-400 rounded-md p-4 mb-6 text-red-700 dark:text-red-300">
+            <p>{error}</p>
+            <button
+              onClick={fetchDocuments}
+              className="mt-2 text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Top Navigation */}
@@ -140,12 +220,20 @@ export default function DashboardPage() {
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center space-x-4">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Writing Desk</h1>
-              <button
-                onClick={() => signIn.email({ email: session.user.email!, password: "" })}
-                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                Account
-              </button>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => router.push("/account")}
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Account
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
               {currentDoc && (
@@ -171,15 +259,6 @@ export default function DashboardPage() {
                   )}
                 </div>
               )}
-              <button
-                onClick={() => {
-                  // Sign out logic would go here
-                  window.location.href = "/login";
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-              >
-                Sign out
-              </button>
             </div>
           </div>
         </div>
@@ -202,27 +281,47 @@ export default function DashboardPage() {
                 <div className="text-center py-4 text-gray-500">Loading...</div>
               ) : (
                 documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    onClick={() => {
-                      setCurrentDoc(doc);
-                      setEditingId(doc.id);
-                    }}
-                    className={`p-2 rounded-md cursor-pointer transition-colors ${
-                      editingId === doc.id
-                        ? "bg-indigo-50 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700"
-                        : "hover:bg-gray-100 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    <div className="font-medium text-gray-900 dark:text-white truncate">
-                      {doc.title}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {new Date(doc.updatedAt).toLocaleDateString()}
-                    </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500">
-                      {doc.status}
-                    </div>
+                  <div key={doc.id} className="relative">
+                    <button
+                      onClick={() => {
+                        setCurrentDoc(doc);
+                        setEditingId(doc.id);
+                      }}
+                      className={`w-full text-left p-2 rounded-md cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
+                        editingId === doc.id
+                          ? "bg-indigo-50 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700"
+                          : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                      }`}
+                      aria-label={`Select document: ${doc.title}`}
+                    >
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
+                        {doc.title}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {new Date(doc.updatedAt).toLocaleDateString()}
+                      </div>
+                      {currentDoc?.id === doc.id && (
+                        <span className="text-xs text-indigo-600 font-medium">
+                          (editing)
+                        </span>
+                      )}
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
+                        {doc.status}
+                      </div>
+                    </button>
+                    {/* Accessible delete control */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(doc.id);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded opacity-0 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                      aria-label={`Delete document: ${doc.title}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 ))
               )}
@@ -256,7 +355,7 @@ export default function DashboardPage() {
                 />
                 <Editor
                   initialContent={currentDoc.content}
-                  onUpdate={(content) => setCurrentDoc({ ...currentDoc, content })}
+                  onUpdate={handleContentUpdate}
                 />
               </div>
             ) : (
