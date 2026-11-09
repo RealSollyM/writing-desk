@@ -17,13 +17,15 @@ async function initializeArcjet() {
     // Dynamic import to handle missing key gracefully
     const { default: arcjet, fixedWindow, detectBot } = await import('arcjet')
 
-    // Create rules
+    // Create rules with LIVE mode as per SDK requirements
     const rateLimitRule = fixedWindow({
+      mode: 'LIVE',
       window: '5 minutes',
       max: 100,
     })
 
     const botRule = detectBot({
+      mode: 'LIVE',
       // Allow verified bots and search engines
       allow: [
         'CATEGORY:SEARCH_ENGINE',
