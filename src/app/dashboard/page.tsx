@@ -1,19 +1,239 @@
 "use client";
 
-import { useSession } from "@/lib/auth-client";
-import { signOut } from "@/lib/auth-client";
+import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import Editor from "@/components/Editor";
+
+interface Document {
+  id: string;
+  title: string;
+  content: string;
+  status: "DRAFT" | "PUBLISHED";
+  createdAt: string;
+  updatedAt: string;
+  bookId?: string | null;
+}
 
 export default function DashboardPage() {
-  const { data: session, isPending, error } = useSession();
+  const { data: session, isPending } = useSession();
   const router = useRouter();
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [currentDoc, setCurrentDoc] = useState<Document | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const editorContentRef = useRef<string>("");
 
   useEffect(() => {
     if (!isPending && !session) {
       router.push("/login");
     }
   }, [session, isPending, router]);
+
+  useEffect(() => {
+    if (session) {
+      fetchDocuments();
+    }
+  }, [session]);
+
+  /**
+   * Fetches documents from the API and handles loading/error states.
+   * On success, clears error and populates documents.
+   * On failure, sets error state with retry option.
+   */
+  const fetchDocuments = async () => {
+    try {
+      const response = await fetch("/api/documents");
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments(data as Document[]);
+        setError(null);
+      } else {
+        const errData = await response.json() as { error?: string };
+        setError(errData.error || 'Failed to fetch documents');
+      }
+    } catch (error) {
+      setError('Network error while fetching documents');
+      console.error("Error fetching documents:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Creates a new blank document and sets it as the current document.
+   * Resets edit state and unsaved changes tracking.
+   */
+  const handleCreateNew = () => {
+    const newDoc: Document = {
+      id: `new-${Date.now()}`,
+      title: "Untitled",
+      content: "",
+      status: "DRAFT",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setCurrentDoc(newDoc);
+    setEditingId(null);
+    setHasUnsavedChanges(false);
+    editorContentRef.current = "";
+  };
+
+  /**
+   * Saves the current document to the API.
+   * Accepts the document to save, serializes it, and passes it to the API.
+   * Reconciles response against currently active document to preserve unsaved edits.
+   */
+  const handleSave = async (docToSave: Document) => {
+    if (!docToSave) return;
+
+    try {
+      const method = editingId ? "PUT" : "POST";
+      const response = await fetch(`/api/documents${editingId ? `/${editingId}` : ""}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: docToSave.title,
+          content: docToSave.content,
+          status: docToSave.status,
+        }),
+      });
+
+      if (response.ok) {
+        const updated = await response.json() as Document;
+        // Reconcile response against currently active document and edit version
+        setDocuments(documents.map(d => (d.id === currentDoc?.id || d.id === updated.id) ? updated : d));
+        if (currentDoc?.id === updated.id && !hasUnsavedChanges) {
+          setCurrentDoc(updated);
+        }
+        // Reconcile temporary ID with persisted ID
+        if (currentDoc?.id !== updated.id) {
+          setCurrentDoc(prev => prev ? { ...prev, id: updated.id } : prev);
+        }
+        setEditingId(updated.id);
+        setHasUnsavedChanges(false);
+        editorContentRef.current = updated.content;
+      } else {
+        const errorData = await response.json().catch(() => ({})) as { error?: string };
+        setError(errorData.error || `Error saving document (${response.statusText})`);
+      }
+    } catch (error) {
+      console.error("Error saving document:", error);
+    }
+  };
+
+  /**
+   * Deletes a document by ID after user confirmation.
+   * Updates the documents list and clears current document if deleted.
+   */
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this document?")) {
+      try {
+        const response = await fetch(`/api/documents/${id}`, {
+          method: "DELETE",
+        });
+        if (response.ok) {
+          // Use state-based updates to avoid race conditions with concurrent deletions
+          setDocuments(prev => prev.filter(d => d.id !== id));
+          setEditingId(prev => (prev === id ? null : prev));
+          setCurrentDoc(prev => {
+            // Only clear current doc if it's the one being deleted
+            if (prev?.id === id) {
+              return null;
+            }
+            return prev;
+          });
+        } else {
+          const errorData = await response.json().catch(() => ({})) as { error?: string };
+          setError(errorData.error || `Error deleting document (${response.statusText})`);
+        }
+      } catch (error) {
+        console.error("Error deleting document:", error);
+      }
+    }
+  };
+
+  /**
+   * Publishes the current document by changing its status to PUBLISHED.
+   */
+  const handlePublish = async () => {
+    if (!currentDoc) return;
+    const updated = { ...currentDoc, status: "PUBLISHED" as const };
+    setCurrentDoc(updated);
+    try {
+      await handleSave(updated);
+    } catch {
+      // Error handling is done in handleSave, which sets error state
+      // Reconcile status with server state by refreshing
+      fetchDocuments();
+    }
+  };
+
+  /**
+   * Saves the current document as a draft by changing its status to DRAFT.
+   */
+  const handleDraft = async () => {
+    if (!currentDoc) return;
+    const updated = { ...currentDoc, status: "DRAFT" as const };
+    setCurrentDoc(updated);
+    try {
+      await handleSave(updated);
+    } catch {
+      // Error handling is done in handleSave, which sets error state
+      // Reconcile status with server state by refreshing
+      fetchDocuments();
+    }
+  };
+
+  /**
+   * Updates document content when editor content changes.
+   * Tracks unsaved changes for the document.
+   */
+  const handleContentUpdate = useCallback((content: string) => {
+    setCurrentDoc(prev => {
+      if (!prev) return null;
+      setHasUnsavedChanges(true);
+      return { ...prev, content };
+    });
+    editorContentRef.current = content;
+  }, []);
+
+  // Handle window unload to warn about unsaved changes
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!currentDoc || !hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [currentDoc, hasUnsavedChanges]);
+
+  // Handle title changes and track unsaved changes
+  const handleTitleChange = (title: string) => {
+    setCurrentDoc(prev => {
+      if (!prev) return null;
+      setHasUnsavedChanges(true);
+      return { ...prev, title };
+    });
+  };
+
+  // Handle sign out properly - call signOut and navigate only after success
+  const handleSignOut = async () => {
+    try {
+      const result = await signOut();
+      if (result?.error) {
+        setError(result.error.message || "Failed to sign out");
+        return;
+      }
+      router.push("/login");
+    } catch (error) {
+      setError("An error occurred while signing out");
+      console.error("Error signing out:", error);
+    }
+  };
 
   if (isPending) {
     return (
@@ -27,65 +247,187 @@ export default function DashboardPage() {
     return null;
   }
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.push("/login");
-    router.refresh();
-  };
+  // Check for errors
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-red-100 dark:bg-red-900 border border-red-400 rounded-md p-4 mb-6 text-red-700 dark:text-red-300">
+            <p>{error}</p>
+            <button
+              onClick={fetchDocuments}
+              className="mt-2 text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <nav className="bg-white dark:bg-gray-800 shadow-sm">
+      {/* Top Navigation */}
+      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
+          <div className="flex justify-between h-16 items-center">
+            <div className="flex items-center space-x-4">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Writing Desk</h1>
+              <div className="flex items-center space-x-4">
+                <span className="text-sm text-gray-600 dark:text-gray-400" title="Signed in as">
+                  {session?.user?.email || 'Account'}
+                </span>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700 dark:text-gray-300">
-                {session.user.name || session.user.email}
-              </span>
-              <button
-                onClick={handleSignOut}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-              >
-                Sign out
-              </button>
+              {currentDoc && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Status: {currentDoc.status}
+                  </span>
+                  {currentDoc.status === "DRAFT" && (
+                    <button
+                      onClick={handlePublish}
+                      className="px-3 py-1 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded"
+                    >
+                      Publish
+                    </button>
+                  )}
+                  {currentDoc.status === "PUBLISHED" && (
+                    <button
+                      onClick={handleDraft}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 rounded"
+                    >
+                      Save as Draft
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-        <div className="text-center">
-          <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white">
-            Welcome to your dashboard, {session.user.name || session.user.email}!
-          </h2>
-          <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
-            You are now authenticated with Better Auth.
-          </p>
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">User ID</h3>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 font-mono break-all">
-                {session.user.id}
-              </p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email</h3>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {session.user.email}
-              </p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email Verified</h3>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {session.user.emailVerified ? "Yes" : "No"}
-              </p>
+      {/* Main Content Area */}
+      <div className="flex">
+        {/* Sidebar - Document List */}
+        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+          <div className="p-4">
+            <button
+              onClick={handleCreateNew}
+              className="w-full mb-4 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+            >
+              + New Document
+            </button>
+
+            <div className="space-y-2">
+              {isLoading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : (
+                documents.map((doc) => (
+                  <div key={doc.id} className="relative">
+                    <button
+                      onClick={() => {
+                        setCurrentDoc(doc);
+                        setEditingId(doc.id);
+                      }}
+                      className={`w-full text-left p-2 rounded-md cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
+                        editingId === doc.id
+                          ? "bg-indigo-50 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700"
+                          : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                      }`}
+                      aria-label={`Select document: ${doc.title}`}
+                    >
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
+                        {doc.title}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {new Date(doc.updatedAt).toLocaleDateString()}
+                      </div>
+                      {currentDoc?.id === doc.id && (
+                        <span className="text-xs text-indigo-600 font-medium">
+                          (editing)
+                        </span>
+                      )}
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
+                        {doc.status}
+                      </div>
+                    </button>
+                    {/* Accessible delete control */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(doc.id);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded opacity-0 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                      aria-label={`Delete document: ${doc.title}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))
+              )}
+
+              {documents.length === 0 && !isLoading && (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No documents yet</p>
+                  <button
+                    onClick={handleCreateNew}
+                    className="mt-2 text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    Create your first document
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      </main>
+        </aside>
+
+        {/* Main Editor Area */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto p-6">
+            {currentDoc ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={currentDoc.title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  className="text-2xl font-bold w-full bg-transparent border-none outline-none text-gray-900 dark:text-white"
+                  placeholder="Document title"
+                />
+                <Editor
+                  initialContent={currentDoc.content}
+                  onUpdate={handleContentUpdate}
+                />
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                  Welcome to Writing Desk
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  Create or select a document to start writing.
+                </p>
+                <button
+                  onClick={handleCreateNew}
+                  className="px-6 py-3 text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+                >
+                  Create New Document
+                </button>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

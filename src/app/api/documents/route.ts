@@ -1,105 +1,135 @@
 import { NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
-// Get key from environment
-const key = process.env.ARCJET_KEY
+/**
+ * Gets the user's role from the database for authorization checks.
+ * This loads the role directly from the database rather than relying on
+ * session.user.role which may be undefined for non-admin users.
+ */
+async function getUserRole(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  })
+  return user?.role ?? null
+}
 
-// Initialize arcjet lazily
-let aj: unknown = null
-
-async function getArcjet() {
-  if (aj) return aj
-
-  if (!key) {
+/**
+ * Validates the document request body for POST/PUT operations.
+ * Returns a sanitized object with only the allowed fields, or null if invalid.
+ * bookId handling: null means detach from book, string means assign to book, undefined means no change.
+ */
+function validateDocumentBody(body: unknown): { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null } | null {
+  if (body === null || typeof body !== 'object') {
     return null
+  }
+  const { title, content, status, bookId } = body as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+
+  if (title !== undefined) result.title = String(title)
+  if (content !== undefined) result.content = String(content)
+  if (status === 'DRAFT' || status === 'PUBLISHED') result.status = status
+  // Handle bookId: null means detach from book, undefined means no change, string means assign/bookId
+  if (bookId === null) {
+    result.bookId = null
+  } else if (bookId !== undefined) {
+    result.bookId = String(bookId)
+  }
+
+  return result as { title?: string; content?: string; status?: "DRAFT" | "PUBLISHED"; bookId?: string | null }
+}
+
+/**
+ * Retrieves all documents for the authenticated user.
+ * Returns documents ordered by most recently updated first, including book info.
+ */
+export async function GET(request: Request) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
+
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    const { default: arcjet, fixedWindow, detectBot } = await import('arcjet')
-
-    const rateLimitRule = fixedWindow({
-      window: '5 minutes',
-      max: 100,
+    const documents = await prisma.document.findMany({
+      where: {
+        authorId: session.user.id,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      include: {
+        book: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     })
 
-    const botRule = detectBot({
-      allow: [
-        'CATEGORY:SEARCH_ENGINE',
-        'BING_CRAWLER',
-        'GOOGLE_CRAWLER',
-      ],
-    })
-
-    aj = arcjet({
-      key,
-      rules: [rateLimitRule, botRule],
-      log: console,
-    })
-
-    return aj
+    return NextResponse.json(documents)
   } catch (error) {
-    console.error('Failed to initialize Arcjet:', error)
-    return null
+    console.error('Error fetching documents:', error)
+    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
   }
 }
 
-// Get client IP
-function getIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) {
-    return forwarded.split(',')[0].trim()
-  }
-  return '127.0.0.1'
-}
-
-export async function GET(request: Request) {
-  // Your API logic here
-  return NextResponse.json({
-    message: 'Documents endpoint',
-    protected: !!key,
-  })
-}
-
+/**
+ * Creates a new document for the authenticated user.
+ * Validates the request body and book access before creating.
+ */
 export async function POST(request: Request) {
-  // Protect with Arcjet if key is set
-  const arcjetInstance = await getArcjet()
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
 
-  if (arcjetInstance) {
-    const ip = getIP(request)
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await (arcjetInstance as any).protect(
-        {},
-        {
-          url: request.url,
-          method: 'POST',
-          ip,
-          headers: Object.fromEntries(request.headers.entries()),
-        }
-      )
-
-      if (result.isDenied()) {
-        if (result.reason?.type === 'RATE_LIMIT') {
-          return NextResponse.json(
-            { error: 'Too many requests. Please try again later.' },
-            {
-              status: 429,
-              headers: {
-                'Content-Type': 'application/json',
-                ...result.rateLimit?.headers,
-              },
-            }
-          )
-        }
-      }
-    } catch (error) {
-      console.error('Arcjet error:', error)
-    }
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Your API logic here
-  return NextResponse.json({
-    message: 'Document created',
-    success: true,
-  })
+  try {
+    // Validate request body - parse JSON first to catch malformed JSON
+    let parsedBody: unknown
+    try {
+      parsedBody = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const body = validateDocumentBody(parsedBody)
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+    const { title, content, status, bookId } = body
+
+    // Validate bookId access if provided
+    if (bookId !== undefined && bookId !== null) {
+      const book = await prisma.book.findUnique({
+        where: { id: bookId },
+        select: { id: true },
+      })
+      if (!book) {
+        return NextResponse.json({ error: 'Book not found' }, { status: 404 })
+      }
+    }
+
+    const document = await prisma.document.create({
+      data: {
+        title: title ?? 'Untitled',
+        content: content ?? '',
+        status: status ?? 'DRAFT',
+        authorId: session.user.id,
+        bookId: bookId ?? null,
+      },
+    })
+
+    return NextResponse.json(document)
+  } catch (error) {
+    console.error('Error creating document:', error)
+    return NextResponse.json({ error: 'Failed to create document' }, { status: 500 })
+  }
 }
