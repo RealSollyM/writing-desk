@@ -14,6 +14,7 @@
     "@better-auth/prisma-adapter": "^1.7.18",
     "@prisma/adapter-neon": "7.10.1",
     "@prisma/client": "7.10.1",
+    "arcjet": "1.15.0",
     "better-auth": "^1.7.18",
     "dotenv": "^16.4.5",
     "next": "16.2.6",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@prisma/config": "^7.10.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19.1.7",

@@ -25,9 +25,9 @@ export const config: VercelConfig = {
 
   // Environment variable configuration
   env: {
-    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-    DATABASE_URL: process.env.DATABASE_URL,
-    ARCJET_KEY: process.env.ARCJET_KEY,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL!,
+    DATABASE_URL: process.env.DATABASE_URL!,
+    ARCJET_KEY: process.env.ARCJET_KEY!,
   },
 
   // Build and development settings
