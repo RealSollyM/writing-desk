@@ -4,7 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 
 interface EditorProps {
   /** The initial HTML content to load into the editor */
@@ -70,14 +70,6 @@ export default function Editor({ initialContent = '', onUpdate, readOnly = false
   if (!editor) {
     return null
   }
-
-  // Helper to execute a command
-  const executeCommand = useCallback((command: () => void) => {
-    if (!readOnly) {
-      editor.chain().focus().run()
-      command()
-    }
-  }, [editor, readOnly])
 
   // Helper to render toolbar buttons with consistent styling
   const renderToolbarButton = (

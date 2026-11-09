@@ -104,16 +104,20 @@ export default function DashboardPage() {
       if (response.ok) {
         const updated = await response.json() as Document;
         // Reconcile response against currently active document and edit version
-        setDocuments(documents.map(d => d.id === updated.id ? updated : d));
-        // Only select the saved document if it's still the active one and has no newer edits
+        setDocuments(documents.map(d => (d.id === currentDoc?.id || d.id === updated.id) ? updated : d));
         if (currentDoc?.id === updated.id && !hasUnsavedChanges) {
           setCurrentDoc(updated);
+        }
+        // Reconcile temporary ID with persisted ID
+        if (currentDoc?.id !== updated.id) {
+          setCurrentDoc(prev => prev ? { ...prev, id: updated.id } : prev);
         }
         setEditingId(updated.id);
         setHasUnsavedChanges(false);
         editorContentRef.current = updated.content;
       } else {
-        console.error("Error saving document:", response.statusText);
+        const errorData = await response.json().catch(() => ({})) as { error?: string };
+        setError(errorData.error || `Error saving document (${response.statusText})`);
       }
     } catch (error) {
       console.error("Error saving document:", error);
@@ -131,13 +135,19 @@ export default function DashboardPage() {
           method: "DELETE",
         });
         if (response.ok) {
-          setDocuments(documents.filter(d => d.id !== id));
-          if (currentDoc?.id === id) {
-            setCurrentDoc(null);
-            setEditingId(null);
-          }
+          // Use state-based updates to avoid race conditions with concurrent deletions
+          setDocuments(prev => prev.filter(d => d.id !== id));
+          setEditingId(prev => (prev === id ? null : prev));
+          setCurrentDoc(prev => {
+            // Only clear current doc if it's the one being deleted
+            if (prev?.id === id) {
+              return null;
+            }
+            return prev;
+          });
         } else {
-          console.error("Error deleting document:", response.statusText);
+          const errorData = await response.json().catch(() => ({})) as { error?: string };
+          setError(errorData.error || `Error deleting document (${response.statusText})`);
         }
       } catch (error) {
         console.error("Error deleting document:", error);
@@ -152,7 +162,13 @@ export default function DashboardPage() {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "PUBLISHED" as const };
     setCurrentDoc(updated);
-    await handleSave(updated);
+    try {
+      await handleSave(updated);
+    } catch {
+      // Error handling is done in handleSave, which sets error state
+      // Reconcile status with server state by refreshing
+      fetchDocuments();
+    }
   };
 
   /**
@@ -162,7 +178,13 @@ export default function DashboardPage() {
     if (!currentDoc) return;
     const updated = { ...currentDoc, status: "DRAFT" as const };
     setCurrentDoc(updated);
-    await handleSave(updated);
+    try {
+      await handleSave(updated);
+    } catch {
+      // Error handling is done in handleSave, which sets error state
+      // Reconcile status with server state by refreshing
+      fetchDocuments();
+    }
   };
 
   /**
@@ -189,12 +211,26 @@ export default function DashboardPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [currentDoc, hasUnsavedChanges]);
 
+  // Handle title changes and track unsaved changes
+  const handleTitleChange = (title: string) => {
+    setCurrentDoc(prev => {
+      if (!prev) return null;
+      setHasUnsavedChanges(true);
+      return { ...prev, title };
+    });
+  };
+
   // Handle sign out properly - call signOut and navigate only after success
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const result = await signOut();
+      if (result?.error) {
+        setError(result.error.message || "Failed to sign out");
+        return;
+      }
       router.push("/login");
     } catch (error) {
+      setError("An error occurred while signing out");
       console.error("Error signing out:", error);
     }
   };
@@ -364,7 +400,7 @@ export default function DashboardPage() {
                 <input
                   type="text"
                   value={currentDoc.title}
-                  onChange={(e) => setCurrentDoc({ ...currentDoc, title: e.target.value })}
+                  onChange={(e) => handleTitleChange(e.target.value)}
                   className="text-2xl font-bold w-full bg-transparent border-none outline-none text-gray-900 dark:text-white"
                   placeholder="Document title"
                 />
