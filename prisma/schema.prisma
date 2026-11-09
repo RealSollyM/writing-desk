@@ -112,8 +112,8 @@ model Session {
 model Account {
   id                String  @id @default(cuid())
   userId            String
-  provider          String
-  providerAccountId String
+  provider          String?
+  providerAccountId String?
   refresh_token     String? @db.Text
   access_token      String? @db.Text
   expires_at        Int?
@@ -124,8 +124,12 @@ model Account {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Better Auth required fields
+  accountId             String
+  providerId            String
   accessToken           String? @db.Text
   refreshToken          String? @db.Text
+  idToken               String? @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
   password              String?
@@ -133,6 +137,7 @@ model Account {
   updatedAt             DateTime @updatedAt
 
   @@unique([provider, providerAccountId])
+  @@unique([providerId, accountId])
   @@index([userId])
   @@map("accounts")
 }
@@ -144,4 +149,16 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
