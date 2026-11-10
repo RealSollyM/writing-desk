@@ -57,6 +57,11 @@ model Document {
   author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
   book       Book?          @relation(fields: [bookId], references: [id])
   bookId     String?
+  // Chapter fields
+  slug       String?        @unique
+  order      Int?           @default(0)
+  partId     String?
+  part       Part?          @relation(fields: [partId], references: [id], onDelete: SetNull)
 
   @@index([authorId])
   @@index([status])
@@ -71,10 +76,27 @@ model Book {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   documents    Document[]
+  parts        Part[]
   collaborators BookCollaborator[]
   owners       User[]             @relation("UserBooks")
 
   @@map("books")
+}
+
+model Part {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String
+  order     Int
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id])
+  chapters  Document[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookId, slug])
+  @@index([bookId, order])
+  @@map("parts")
 }
 
 model BookCollaborator {
