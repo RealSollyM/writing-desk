@@ -55,8 +55,10 @@ model Document {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
   author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  book       Book?          @relation(fields: [bookId], references: [id])
+  book       Book?          @relation(fields: [bookId], references: [id], onDelete: SetNull)
   bookId     String?
+  chapter    Chapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  chapterId  String?
 
   @@index([authorId])
   @@index([status])
@@ -68,13 +70,46 @@ model Book {
   id           String             @id @default(cuid())
   title        String
   description  String?
+  slug         String?            @unique
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   documents    Document[]
+  chapters     Chapter[]
+  parts        Part[]
   collaborators BookCollaborator[]
   owners       User[]             @relation("UserBooks")
 
   @@map("books")
+}
+
+model Part {
+  id           String             @id @default(cuid())
+  title        String
+  description  String?
+  order        Int
+  bookId       String
+  book         Book               @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapters     Chapter[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([bookId, order])
+  @@map("parts")
+}
+
+model Chapter {
+  id           String             @id @default(cuid())
+  title        String
+  slug         String
+  order        Int
+  bookId       String
+  book         Book               @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  partId       String?
+  part         Part?              @relation(fields: [partId], references: [id], onDelete: SetNull)
+  documents    Document[]
+
+  @@index([bookId, order])
+  @@map("chapters")
 }
 
 model BookCollaborator {
