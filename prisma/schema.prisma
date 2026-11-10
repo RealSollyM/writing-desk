@@ -20,6 +20,8 @@ model User {
   documents          Document[]
   sessions           Session[]
   books              Book[]             @relation("UserBooks")
+  ownedBooks         Book[]             @relation("BookOwner")
+  comments           Comment[]
 
   @@map("users")
 }
@@ -27,7 +29,7 @@ model User {
 model Document {
   id         String         @id @default(cuid())
   title      String
-  slug       String   @default("untitled")
+  slug       String?        @unique
   content    String
   status     DocumentStatus @default(DRAFT)
   authorId   String
@@ -37,7 +39,6 @@ model Document {
   book       Book?          @relation(fields: [bookId], references: [id])
   bookId     String?
   // Chapter fields
-  slug       String?        @unique
   order      Int?           @default(0)
   partId     String?
   part       Part?          @relation(fields: [partId], references: [id], onDelete: SetNull)
@@ -45,6 +46,7 @@ model Document {
   @@index([authorId])
   @@index([status])
   @@index([createdAt])
+  @@unique([bookId, slug])
   @@map("documents")
 }
 
@@ -76,6 +78,8 @@ model Book {
   documents    Document[]
   parts        Part[]
   collaborators BookCollaborator[]
+  comments       Comment[]
+  owners         User[]             @relation("UserBooks")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -195,4 +199,22 @@ enum BookRole {
 enum DocumentStatus {
   DRAFT
   PUBLISHED
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  bookId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  parentId  String?
+
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies Comment[] @relation("CommentReplies")
+
+  @@index([bookId])
+  @@index([userId])
+  @@map("comments")
 }
