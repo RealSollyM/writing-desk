@@ -6,42 +6,20 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  ADMIN
-  WRITER
-  READER
-}
-
-enum BookRole {
-  OWNER
-  CO_WRITER
-  CONTRIBUTOR
-  GHOST_WRITER
-}
-
-enum DocumentStatus {
-  DRAFT
-  PUBLISHED
-}
-
 model User {
-  id              String             @id @default(cuid())
-  email           String             @unique
-  name            String?
-  role            UserRole           @default(WRITER)
-  emailVerified   Boolean            @default(false)
-  image           String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-
-  // Better Auth related fields
-  accounts       Account[]
-  sessions       Session[]
-
-  // Writing Desk models
-  documents      Document[]
-  books          Book[]             @relation("UserBooks")
+  id                 String             @id @default(cuid())
+  email              String             @unique
+  name               String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  role               UserRole           @default(WRITER)
+  emailVerified      Boolean            @default(false)
+  image              String?
+  accounts           Account[]
   bookCollaborations BookCollaborator[]
+  documents          Document[]
+  sessions           Session[]
+  books              Book[]             @relation("UserBooks")
 
   @@map("users")
 }
@@ -49,6 +27,7 @@ model User {
 model Document {
   id         String         @id @default(cuid())
   title      String
+  slug       String   @default("untitled")
   content    String
   status     DocumentStatus @default(DRAFT)
   authorId   String
@@ -69,17 +48,38 @@ model Document {
   @@map("documents")
 }
 
+model Collection {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  books       Book[]   @relation("BookCollection")
+
+  @@map("collections")
+}
+
 model Book {
   id           String             @id @default(cuid())
   title        String
+  slug         String   @unique
   description  String?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  genre        String?
+  coverImage   String?
+  isPublic     Boolean  @default(false)
+  isPublished  Boolean  @default(false)
+  ownerId      String
+  owner        User     @relation("BookOwner", fields: [ownerId], references: [id])
+  collection   Collection? @relation("BookCollection", fields: [collectionId], references: [id])
+  collectionId String?
   documents    Document[]
   parts        Part[]
   collaborators BookCollaborator[]
-  owners       User[]             @relation("UserBooks")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
+  @@index([slug])
   @@map("books")
 }
 
@@ -105,9 +105,8 @@ model BookCollaborator {
   bookId    String
   role      BookRole
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, bookId])
   @@map("book_collaborators")
@@ -119,44 +118,39 @@ model Session {
   userId       String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  expiresAt DateTime
-  token     String   @unique
-  ipAddress String?
-  userAgent String?
+  expiresAt    DateTime
+  token        String   @unique
+  ipAddress    String?
+  userAgent    String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("sessions")
 }
 
 model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  provider          String?
-  providerAccountId String?
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Better Auth required fields
-  accountId             String
-  providerId            String
-  accessToken           String? @db.Text
-  refreshToken          String? @db.Text
-  idToken               String? @db.Text
+  id                    String    @id @default(cuid())
+  userId                String
+  provider              String?
+  providerAccountId     String?
+  refresh_token         String?
+  access_token          String?
+  expires_at            Int?
+  token_type            String?
+  scope                 String?
+  id_token              String?
+  session_state         String?
+  accessToken           String?
+  refreshToken          String?
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
   password              String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  accountId             String
+  idToken               String?
+  providerId            String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@unique([providerId, accountId])
@@ -183,4 +177,22 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+enum UserRole {
+  ADMIN
+  WRITER
+  READER
+}
+
+enum BookRole {
+  OWNER
+  CO_WRITER
+  CONTRIBUTOR
+  GHOST_WRITER
+}
+
+enum DocumentStatus {
+  DRAFT
+  PUBLISHED
 }
