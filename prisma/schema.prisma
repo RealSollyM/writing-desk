@@ -6,6 +6,24 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN
+  WRITER
+  READER
+}
+
+enum BookRole {
+  OWNER
+  CO_WRITER
+  CONTRIBUTOR
+  GHOST_WRITER
+}
+
+enum DocumentStatus {
+  DRAFT
+  PUBLISHED
+}
+
 model User {
   id                 String             @id @default(cuid())
   email              String             @unique
@@ -20,6 +38,7 @@ model User {
   documents          Document[]
   sessions           Session[]
   books              Book[]             @relation("UserBooks")
+  ownedBooks         Book[]             @relation("BookOwner")
 
   @@map("users")
 }
@@ -30,12 +49,15 @@ model Document {
   slug       String   @default("untitled")
   content    String
   status     DocumentStatus @default(DRAFT)
+  isPublished Boolean       @default(false)
   authorId   String
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
   author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
   book       Book?          @relation(fields: [bookId], references: [id])
   bookId     String?
+  collection  Collection?    @relation(fields: [collectionId], references: [id])
+  collectionId String?
 
   @@index([authorId])
   @@index([status])
@@ -51,6 +73,7 @@ model Collection {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   books       Book[]   @relation("BookCollection")
+  documents   Document[]
 
   @@map("collections")
 }
@@ -70,6 +93,7 @@ model Book {
   collectionId String?
   documents    Document[]
   collaborators BookCollaborator[]
+  users        User[]   @relation("UserBooks")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -96,11 +120,13 @@ model Session {
   userId       String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  expiresAt    DateTime
-  token        String   @unique
-  ipAddress    String?
-  userAgent    String?
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
 
   @@index([userId])
   @@map("sessions")
@@ -111,24 +137,27 @@ model Account {
   userId                String
   provider              String?
   providerAccountId     String?
-  refresh_token         String?
-  access_token          String?
+  refresh_token         String? @db.Text
+  access_token          String? @db.Text
   expires_at            Int?
   token_type            String?
   scope                 String?
-  id_token              String?
+  id_token              String? @db.Text
   session_state         String?
-  accessToken           String?
-  refreshToken          String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Better Auth required fields
+  accountId             String
+  providerId            String
+  accessToken           String? @db.Text
+  refreshToken          String? @db.Text
+  idToken               String? @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
   password              String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  accountId             String
-  idToken               String?
-  providerId            String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([provider, providerAccountId])
   @@unique([providerId, accountId])
@@ -155,22 +184,4 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
-}
-
-enum UserRole {
-  ADMIN
-  WRITER
-  READER
-}
-
-enum BookRole {
-  OWNER
-  CO_WRITER
-  CONTRIBUTOR
-  GHOST_WRITER
-}
-
-enum DocumentStatus {
-  DRAFT
-  PUBLISHED
 }
