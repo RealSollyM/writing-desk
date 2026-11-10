@@ -58,7 +58,7 @@ model Document {
   book       Book?          @relation(fields: [bookId], references: [id])
   bookId     String?
   // Chapter fields
-  slug       String?        @unique
+  slug       String?
   order      Int?           @default(0)
   partId     String?
   part       Part?          @relation(fields: [partId], references: [id], onDelete: SetNull)
@@ -66,6 +66,7 @@ model Document {
   @@index([authorId])
   @@index([status])
   @@index([createdAt])
+  @@unique([bookId, slug])
   @@map("documents")
 }
 

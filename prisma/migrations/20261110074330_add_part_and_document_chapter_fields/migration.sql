@@ -26,7 +26,7 @@ ALTER TABLE "documents" ADD COLUMN "order" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "documents" ADD COLUMN "partId" TEXT;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "documents_slug_key" ON "documents"("slug");
+CREATE UNIQUE INDEX "documents_bookId_slug_key" ON "documents"("bookId", "slug");
 
 -- CreateIndex
 CREATE INDEX "documents_partId_idx" ON "documents"("partId");
