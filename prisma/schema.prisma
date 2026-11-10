@@ -19,13 +19,16 @@ model User {
   bookCollaborations BookCollaborator[]
   documents          Document[]
   sessions           Session[]
+  documentVersions   DocumentVersion[]
   books              Book[]             @relation("UserBooks")
+  ownedBooks         Book[]             @relation("BookOwner")
 
   @@map("users")
 }
 
 model Document {
   id         String         @id @default(cuid())
+  versionId  String?        @unique @default(dbgenerated("gen_random_uuid()"))
   title      String
   slug       String   @default("untitled")
   content    String
@@ -37,15 +40,34 @@ model Document {
   book       Book?          @relation(fields: [bookId], references: [id])
   bookId     String?
   // Chapter fields
-  slug       String?        @unique
   order      Int?           @default(0)
   partId     String?
   part       Part?          @relation(fields: [partId], references: [id], onDelete: SetNull)
+  versions   DocumentVersion[]
 
   @@index([authorId])
   @@index([status])
   @@index([createdAt])
   @@map("documents")
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  versionId     String   @unique
+  documentId    String
+  title         String
+  content       String
+  status        DocumentStatus @default(DRAFT)
+  authorId      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([authorId])
+  @@map("document_versions")
 }
 
 model Collection {
@@ -76,6 +98,7 @@ model Book {
   documents    Document[]
   parts        Part[]
   collaborators BookCollaborator[]
+  users        User[]   @relation("UserBooks")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
